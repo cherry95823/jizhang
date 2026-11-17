@@ -2,7 +2,7 @@
  * 很薄的一层离线缓存：第一次打开成功后，没网也能再开账本。
  * 账目本身在 localStorage，不经过这里。
  */
-const CACHE = 'jizhang-shell-v1';
+const CACHE = 'jizhang-shell-v2';
 const ASSETS = [
   './index.html',
   './css/styles.css',
@@ -12,9 +12,14 @@ const ASSETS = [
   './js/charts.js',
   './js/storage.js',
   './js/demo.js',
+  './js/backgrounds.js',
   './manifest.webmanifest',
   './assets/icon-192.png',
   './assets/icon-512.png',
+  './assets/bg/rose-window.webp',
+  './assets/bg/rose-window.jpg',
+  './assets/bg/sakura-water.webp',
+  './assets/bg/sakura-water.jpg',
 ];
 
 self.addEventListener('install', (event) => {

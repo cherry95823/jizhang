@@ -1,13 +1,11 @@
 /*
-  壁纸只改这一处。
-  保持 none：用粉色水彩渐变。
-  换成自己的图：--bg-image: url("../assets/bg.jpg");
-  想在照片上留一层薄粉：
-  --bg-image: linear-gradient(rgba(253, 238, 244, 0.42), rgba(242, 209, 203, 0.32)), url("../assets/bg.jpg");
+  默认壁纸是 assets/bg/rose-window（雨窗玫瑰）。
+  水中樱花是 sakura-water。设置里可以换，也可以上传自己的照片。
+  纱罩浓淡由 --veil 控制（0 几乎没有，1 最浓）。
 */
 
 :root {
-  --bg-image: none;
+  --veil: 0.38;
   --ink: #5c4a4f;
   --ink-soft: #8c7378;
   --gold: #d4b896;
@@ -50,24 +48,61 @@ img, svg { display: block; }
   position: fixed;
   inset: 0;
   z-index: -2;
+  overflow: hidden;
   background-color: #f6e3e2;
   background-image:
-    var(--bg-image),
     radial-gradient(ellipse 95% 58% at 8% -12%, #fdeef4 0%, rgba(253, 238, 244, 0) 62%),
     radial-gradient(ellipse 78% 52% at 112% -4%, #f2d1cb 0%, rgba(242, 209, 203, 0) 56%),
     radial-gradient(ellipse 86% 52% at 78% 112%, #efded9 0%, rgba(239, 222, 217, 0) 54%),
-    radial-gradient(ellipse 60% 42% at -12% 78%, #f8e0e6 0%, rgba(248, 224, 230, 0) 60%),
     linear-gradient(165deg, #fdeef4 0%, #f4d6d4 46%, #efded9 100%);
   background-size: cover;
   background-position: center;
+}
+.bg-photo,
+.bg-veil {
+  position: absolute;
+  inset: 0;
+}
+.bg-photo {
   background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center center;
+}
+.bg[data-theme="rose"] .bg-photo {
+  background-image: url("../assets/bg/rose-window.jpg");
+  background-image: image-set(
+    url("../assets/bg/rose-window.webp") type("image/webp"),
+    url("../assets/bg/rose-window.jpg") type("image/jpeg")
+  );
+  background-position: center center;
+}
+.bg[data-theme="sakura"] .bg-photo {
+  background-image: url("../assets/bg/sakura-water.jpg");
+  background-image: image-set(
+    url("../assets/bg/sakura-water.webp") type("image/webp"),
+    url("../assets/bg/sakura-water.jpg") type("image/jpeg")
+  );
+  /* 竖屏会裁掉左右，花朵留在中间。 */
+  background-position: center 42%;
+}
+.bg-veil {
+  opacity: var(--veil, 0.38);
+  pointer-events: none;
+}
+.bg[data-theme="rose"] .bg-veil,
+.bg[data-theme="custom"] .bg-veil {
+  background: linear-gradient(180deg, rgba(253, 236, 240, 0.94) 0%, rgba(244, 214, 210, 0.78) 100%);
+}
+/* 樱花的天是蓝的，纱罩用更暖的粉把它拢回来。 */
+.bg[data-theme="sakura"] .bg-veil {
+  background: linear-gradient(180deg, rgba(255, 198, 208, 0.96) 0%, rgba(244, 160, 176, 0.88) 58%, rgba(236, 186, 196, 0.74) 100%);
 }
 .bg::after {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.16;
+  opacity: 0.1;
   mix-blend-mode: multiply;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.55'/></svg>");
   background-size: 180px 180px;
@@ -526,6 +561,101 @@ img, svg { display: block; }
   color: var(--berry);
   font-size: 12px;
   font-weight: 300;
+}
+.bg-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 4px;
+}
+.bg-card { position: relative; }
+.bg-pick {
+  width: 100%;
+  border-radius: 18px;
+  overflow: hidden;
+  text-align: left;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.45);
+}
+.bg-pick.is-on {
+  box-shadow: inset 0 0 0 1px rgba(212, 184, 150, 0.95), 0 8px 18px rgba(176, 122, 130, 0.12);
+}
+.bg-pick-pic {
+  display: block;
+  height: 108px;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+.bg-pick-pic.rose {
+  background-image: url("../assets/bg/rose-window.jpg");
+  background-image: image-set(
+    url("../assets/bg/rose-window.webp") type("image/webp"),
+    url("../assets/bg/rose-window.jpg") type("image/jpeg")
+  );
+  background-position: center center;
+}
+.bg-pick-pic.sakura {
+  background-image: url("../assets/bg/sakura-water.jpg");
+  background-image: image-set(
+    url("../assets/bg/sakura-water.webp") type("image/webp"),
+    url("../assets/bg/sakura-water.jpg") type("image/jpeg")
+  );
+  background-position: center 42%;
+}
+.bg-pick-pic img {
+  width: 100%;
+  height: 108px;
+  object-fit: cover;
+  object-position: center center;
+}
+.bg-pick-name {
+  display: block;
+  padding: 7px 10px 9px;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+.bg-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(255, 248, 248, 0.72);
+  color: var(--ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  font-family: "Cormorant Garamond", serif;
+  font-size: 18px;
+  line-height: 1;
+}
+.veil-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  margin: 14px 0 4px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+.veil-row input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 2px;
+  margin: 0;
+  border-radius: 99px;
+  background: rgba(92, 74, 79, 0.22);
+  accent-color: #d4b896;
+}
+.veil-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fbf6f2;
+  box-shadow: inset 0 0 0 0.5px rgba(212, 184, 150, 0.95), 0 3px 8px rgba(176, 122, 130, 0.28);
 }
 .link-row {
   width: 100%;

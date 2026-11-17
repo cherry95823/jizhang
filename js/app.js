@@ -2,6 +2,18 @@
  * 界面层。账怎么算在 ledger.js，这里只负责把玻璃卡片画出来、把点击写成一笔账。
  */
 
+import {
+  addUpload,
+  backgroundsFitExport,
+  blobToDataUrl,
+  dataUrlToBlob,
+  fileToWallpaper,
+  listUploads,
+  loadBgPref,
+  normalizeBgPref,
+  removeUpload,
+  saveBgPref,
+} from './backgrounds.js';
 import { barsSVG, CHART_COLORS, donutSVG } from './charts.js';
 import { buildDemoState } from './demo.js';
 import { icon } from './icons.js';
@@ -52,6 +64,8 @@ const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'back'];
 
 let state;
 let ui;
+let bgPref = normalizeBgPref(null);
+let bgUploads = [];
 let paintedSheet = null;
 let calMemo = null;
 let toastTimer = 0;
@@ -111,16 +125,63 @@ function makeUI(today) {
   };
 }
 
-function boot() {
+async function boot() {
   const raw = loadRaw();
   state = raw ? normalizeState(raw) : freshState();
   ui = makeUI(todayISO());
+  bgPref = loadBgPref();
+  applyBackground();
   if (!state.onboarded) ui.sheet = 'onboard';
   else maybeBackfill(false);
   bind();
   render();
+  try {
+    await hydrateUploads();
+    if (bgPref.kind === 'upload' && !bgUploads.some((item) => item.id === bgPref.uploadId)) {
+      bgPref = saveBgPref({ ...bgPref, kind: 'rose', uploadId: null });
+    }
+    applyBackground();
+    if (ui.tab === 'settings') render();
+  } catch {
+    // 没有 IndexedDB 时，内置壁纸仍然可用。
+  }
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
+}
+
+async function hydrateUploads() {
+  const records = await listUploads();
+  bgUploads.forEach((item) => URL.revokeObjectURL(item.url));
+  bgUploads = records
+    .slice()
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
+    .map((record) => ({
+      id: record.id,
+      name: record.name || '我的背景',
+      url: URL.createObjectURL(record.blob),
+      size: record.blob?.size || 0,
+      width: record.width,
+      height: record.height,
+    }));
+}
+
+function applyBackground() {
+  const root = document.getElementById('bg');
+  if (!root) return;
+  const photo = root.querySelector('.bg-photo');
+  const upload = bgPref.kind === 'upload'
+    ? bgUploads.find((item) => item.id === bgPref.uploadId)
+    : null;
+  const theme = upload ? 'custom' : bgPref.kind === 'sakura' ? 'sakura' : 'rose';
+  root.dataset.theme = theme;
+  root.style.setProperty('--veil', String(bgPref.veil));
+  if (upload) {
+    photo.style.backgroundImage = `url("${upload.url}")`;
+    photo.style.backgroundPosition = 'center center';
+  } else {
+    photo.style.backgroundImage = '';
+    photo.style.backgroundPosition = '';
   }
 }
 
@@ -469,6 +530,23 @@ function viewSettings() {
   return `
     ${hero('Settings', '设置', '账只留在这台设备上', true, true)}
     <section class="glass set-block" data-screen="settings">
+      <h2>背景</h2>
+      <p class="lede">纱罩越浓，字越清楚，照片越淡。上传的图只留在这台设备里；太大时，导出备份不会带上它们。</p>
+      <div class="bg-grid">
+        ${builtinBg('rose', '雨窗玫瑰')}
+        ${builtinBg('sakura', '水中樱花')}
+        ${bgUploads.map((item) => uploadBg(item)).join('')}
+      </div>
+      <label class="veil-row">
+        <span>淡</span>
+        <input type="range" min="0" max="100" step="1" data-field="veil" value="${Math.round(bgPref.veil * 100)}" aria-label="纱罩浓淡" />
+        <span>浓</span>
+      </label>
+      <p class="hint">纱罩浓淡</p>
+      <button type="button" class="btn-primary stack-btn" data-action="pick-bg-file">上传背景</button>
+      <input id="bg-file" type="file" accept="image/*" hidden />
+    </section>
+    <section class="glass set-block">
       <h2>起始余额</h2>
       <p class="lede">这是建账时钱包里已经有的钱，不是后来的收入。改这里会立刻改掉当前余额。</p>
       ${state.wallets.map((wallet) => `
@@ -505,10 +583,31 @@ function viewSettings() {
     </section>
     <section class="glass set-block">
       <h2>清空</h2>
-      <p class="lede">删掉这台设备上的全部账本，回到最初的空白。</p>
+      <p class="lede">删掉这台设备上的全部账本，回到最初的空白。背景还留着。</p>
       <button type="button" class="btn-danger" data-action="ask-clear">清空所有数据</button>
     </section>
   `;
+}
+
+function builtinBg(kind, name) {
+  const on = bgPref.kind === kind;
+  return `<div class="bg-card">
+    <button type="button" class="bg-pick${on ? ' is-on' : ''}" data-action="pick-bg" data-kind="${kind}" aria-pressed="${on}">
+      <span class="bg-pick-pic ${kind}"></span>
+      <span class="bg-pick-name">${name}</span>
+    </button>
+  </div>`;
+}
+
+function uploadBg(item) {
+  const on = bgPref.kind === 'upload' && bgPref.uploadId === item.id;
+  return `<div class="bg-card">
+    <button type="button" class="bg-pick${on ? ' is-on' : ''}" data-action="pick-bg" data-kind="upload" data-id="${esc(item.id)}" aria-pressed="${on}">
+      <span class="bg-pick-pic"><img src="${esc(item.url)}" alt="" /></span>
+      <span class="bg-pick-name">${esc(item.name)}</span>
+    </button>
+    <button type="button" class="bg-delete" data-action="delete-bg" data-id="${esc(item.id)}" aria-label="删除${esc(item.name)}">×</button>
+  </div>`;
 }
 
 function viewCategories() {
@@ -894,8 +993,27 @@ function commitRename() {
   render();
 }
 
-function exportJson() {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+async function exportJson() {
+  const records = await listUploads().catch(() => []);
+  const total = records.reduce((sum, item) => sum + (item.blob?.size || 0), 0);
+  const payload = { ...state, background: bgPref };
+  let omitted = false;
+  if (backgroundsFitExport(total)) {
+    payload.backgrounds = [];
+    for (const item of records) {
+      payload.backgrounds.push({
+        id: item.id,
+        name: item.name,
+        createdAt: item.createdAt,
+        width: item.width,
+        height: item.height,
+        data: await blobToDataUrl(item.blob),
+      });
+    }
+  } else if (records.length) {
+    omitted = true;
+  }
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
   link.download = `jizhang-${state.setupDate || ui.today}.json`;
@@ -903,22 +1021,94 @@ function exportJson() {
   link.click();
   link.remove();
   URL.revokeObjectURL(link.href);
-  toast('已导出备份');
+  toast(omitted ? '已导出账本。照片背景太大，没有写进备份' : '已导出备份');
 }
 
 async function importFile(file) {
   try {
     const text = await file.text();
+    let data = null;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error('这不是有效的记账本备份');
+    }
     state = parseBackup(text, ui.today);
     const filled = applyGrantBackfill(state, ui.today);
     state = filled.state;
     if (!persist()) return;
+    await restoreBackgrounds(data);
     const today = ui.today;
     ui = makeUI(today);
     toast(filled.added.length ? `已导入，并补记助学金 ${filled.added.length} 笔` : '已导入备份');
   } catch (error) {
     toast(error.message || '导入失败');
   }
+}
+
+async function restoreBackgrounds(data) {
+  if (data?.background) bgPref = normalizeBgPref(data.background);
+  if (Array.isArray(data?.backgrounds)) {
+    for (const item of data.backgrounds) {
+      const blob = dataUrlToBlob(item?.data);
+      if (!blob || !item?.id) continue;
+      await addUpload({
+        id: String(item.id),
+        name: String(item.name || '我的背景').slice(0, 16),
+        createdAt: item.createdAt || new Date().toISOString(),
+        width: item.width || 0,
+        height: item.height || 0,
+        blob,
+      });
+    }
+    await hydrateUploads();
+  }
+  if (bgPref.kind === 'upload' && !bgUploads.some((item) => item.id === bgPref.uploadId)) {
+    bgPref = { ...bgPref, kind: 'rose', uploadId: null };
+  }
+  bgPref = saveBgPref(bgPref);
+  applyBackground();
+}
+
+async function importBackground(file) {
+  try {
+    const resized = await fileToWallpaper(file);
+    const id = `bg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const name = String(file.name || '我的背景').replace(/\.[^.]+$/, '').slice(0, 16) || '我的背景';
+    await addUpload({
+      id,
+      name,
+      createdAt: new Date().toISOString(),
+      width: resized.width,
+      height: resized.height,
+      blob: resized.blob,
+    });
+    bgUploads.push({
+      id,
+      name,
+      url: URL.createObjectURL(resized.blob),
+      size: resized.blob.size,
+      width: resized.width,
+      height: resized.height,
+    });
+    bgPref = saveBgPref({ ...bgPref, kind: 'upload', uploadId: id });
+    applyBackground();
+    toast('已换成这张背景');
+  } catch (error) {
+    toast(error.message || '这张图打不开');
+  }
+}
+
+async function deleteBackground(id) {
+  await removeUpload(id);
+  const item = bgUploads.find((entry) => entry.id === id);
+  if (item) URL.revokeObjectURL(item.url);
+  bgUploads = bgUploads.filter((entry) => entry.id !== id);
+  if (bgPref.uploadId === id) {
+    bgPref = saveBgPref({ ...bgPref, kind: 'rose', uploadId: null });
+    applyBackground();
+  }
+  toast('已删除这张背景');
 }
 
 function onClick(event) {
@@ -1130,6 +1320,25 @@ function onClick(event) {
     exportJson();
     return;
   }
+  if (action === 'pick-bg') {
+    const kind = target.dataset.kind === 'sakura' || target.dataset.kind === 'upload' ? target.dataset.kind : 'rose';
+    bgPref = saveBgPref({
+      ...bgPref,
+      kind,
+      uploadId: kind === 'upload' ? target.dataset.id : null,
+    });
+    applyBackground();
+    render();
+    return;
+  }
+  if (action === 'delete-bg') {
+    deleteBackground(target.dataset.id);
+    return;
+  }
+  if (action === 'pick-bg-file') {
+    document.getElementById('bg-file')?.click();
+    return;
+  }
   if (action === 'pick-import') {
     document.getElementById('import-file')?.click();
     return;
@@ -1222,6 +1431,10 @@ function onInput(event) {
     ui.balanceDraft = ui.balanceDraft || {};
     ui.balanceDraft[el.dataset.balance] = el.value;
   }
+  if (el.dataset.field === 'veil') {
+    bgPref = saveBgPref({ ...bgPref, veil: Number(el.value) / 100 });
+    applyBackground();
+  }
 }
 
 function onChange(event) {
@@ -1231,6 +1444,11 @@ function onChange(event) {
     const file = el.files[0];
     el.value = '';
     importFile(file);
+  }
+  if (el.id === 'bg-file' && el.files?.[0]) {
+    const file = el.files[0];
+    el.value = '';
+    importBackground(file);
   }
 }
 
